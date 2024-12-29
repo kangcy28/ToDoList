@@ -76,20 +76,19 @@ public class FileService
                 PropertyNameCaseInsensitive = true
             });
 
-            if (todos == null || !todos.Any())
+            foreach (var todo in todos ?? new List<Todo>())
             {
-                Console.WriteLine("No todos were deserialized from JSON");
-                return new List<Todo>();
+                todo.Validate();
             }
 
-            Console.WriteLine($"Successfully loaded {todos.Count} todos"); // Debug line
-            return todos;
+            return todos ?? new List<Todo>();
+        }
+        catch (JsonException ex)
+        {
+            throw new FileOperationException("Invalid JSON format in file", ex);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error details: {ex.Message}"); // Debug line
-            if (ex.InnerException != null)
-                Console.WriteLine($"Inner error: {ex.InnerException.Message}");
             throw new FileOperationException($"Failed to load todos from {filePath}", ex);
         }
     }

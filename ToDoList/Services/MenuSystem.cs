@@ -77,20 +77,28 @@ namespace ToDoList.Services
             Console.Clear();
             Console.WriteLine("=== Create New Todo ===");
 
-            Console.Write("Enter title: ");
-            string title = Console.ReadLine();
-
-            Console.Write("Enter description: ");
-            string description = Console.ReadLine();
-
             try
             {
+                Console.Write("Enter title: ");
+                string title = Console.ReadLine();
+
+                Console.Write("Enter description: ");
+                string description = Console.ReadLine();
+
                 var todo = await _todoManager.AddTodoAsync(title, description);
                 Console.WriteLine($"\nTodo created successfully! ID: {todo.Id}");
             }
+            catch (ValidationException ex)
+            {
+                Console.WriteLine($"\nValidation Error: {ex.Message}");
+            }
+            catch (TodoException ex)
+            {
+                Console.WriteLine($"\nError: {ex.Message}");
+            }
             catch (Exception ex)
             {
-                Console.WriteLine($"\nError creating todo: {ex.Message}");
+                Console.WriteLine($"\nUnexpected error: {ex.Message}");
             }
 
             Console.WriteLine("\nPress any key to continue...");
