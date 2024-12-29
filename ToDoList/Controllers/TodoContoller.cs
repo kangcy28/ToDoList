@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
+using System.ComponentModel.DataAnnotations;
 using ToDoList.Models;
+using ToDoList.Models.Requests;
+using ToDoList.Models.Responses;
 using ToDoList.Services;
 
 namespace ToDoList.Controllers
@@ -11,10 +14,12 @@ namespace ToDoList.Controllers
     public class TodoController : ControllerBase
     {
         private readonly TodoManager _todoManager;
+        private readonly ILogger<TodoController> _logger;
 
-        public TodoController(TodoManager todoManager)
+        public TodoController(TodoManager todoManager, ILogger<TodoController> logger)
         {
             _todoManager = todoManager;
+            _logger = logger;
         }
 
         /// <summary>
@@ -29,10 +34,20 @@ namespace ToDoList.Controllers
             OperationId = "GetTodos",
             Tags = new[] { "Todos" }
         )]
-        public async Task<ActionResult<IEnumerable<Todo>>> GetTodos()
+        [ProducesResponseType(typeof(ApiResponse<IEnumerable<Todo>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<IEnumerable<Todo>>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<IEnumerable<Todo>>>> GetTodos()
         {
-            var todos = await _todoManager.GetAllTodosAsync();
-            return Ok(todos);
+            try
+            {
+                var todos = await _todoManager.GetAllTodosAsync();
+                return Ok(ApiResponse<IEnumerable<Todo>>.SuccessResponse(todos, "Todos retrieved successfully"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving todos");
+                return StatusCode(500, ApiResponse<IEnumerable<Todo>>.ErrorResponse("An error occurred while retrieving todos"));
+            }
         }
 
         /// <summary>
@@ -42,25 +57,33 @@ namespace ToDoList.Controllers
         /// <returns>The requested todo item</returns>
         /// <response code="200">Returns the requested todo item</response>
         /// <response code="404">If the todo item is not found</response>
-        [HttpGet("{id}")]
+        [HttpGet("{id:int}")]
         [SwaggerOperation(
             Summary = "Get todo by ID",
             Description = "Retrieves a specific todo item by its ID",
             OperationId = "GetTodoById",
             Tags = new[] { "Todos" }
         )]
-        [SwaggerResponse(200, "The todo item was successfully retrieved", typeof(Todo))]
+        [SwaggerResponse(200, "The todo item was successfully retrieved", typeof(ApiResponse<Todo>))]
         [SwaggerResponse(404, "Todo item not found")]
-        public async Task<ActionResult<Todo>> GetTodo(int id)
+        [ProducesResponseType(typeof(ApiResponse<Todo>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<Todo>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<Todo>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<Todo>>> GetTodo(int id)
         {
             try
             {
                 var todo = await _todoManager.GetTodoByIdAsync(id);
-                return Ok(todo);
+                return Ok(ApiResponse<Todo>.SuccessResponse(todo, "Todo retrieved successfully"));
             }
             catch (KeyNotFoundException)
             {
-                return NotFound();
+                return NotFound(ApiResponse<Todo>.ErrorResponse($"Todo with ID {id} not found"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving todo {Id}", id);
+                return StatusCode(500, ApiResponse<Todo>.ErrorResponse("An error occurred while retrieving the todo"));
             }
         }
 
@@ -78,18 +101,27 @@ namespace ToDoList.Controllers
             OperationId = "CreateTodo",
             Tags = new[] { "Todos" }
         )]
-        [SwaggerResponse(201, "The todo item was successfully created", typeof(Todo))]
+        [SwaggerResponse(201, "The todo item was successfully created", typeof(ApiResponse<Todo>))]
         [SwaggerResponse(400, "Invalid input")]
-        public async Task<ActionResult<Todo>> CreateTodo([FromBody] TodoCreateRequest request)
+        [ProducesResponseType(typeof(ApiResponse<Todo>), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(ApiResponse<Todo>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<Todo>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<Todo>>> CreateTodo([FromBody] TodoCreateRequest request)
         {
             try
             {
                 var todo = await _todoManager.AddTodoAsync(request.Title, request.Description);
-                return CreatedAtAction(nameof(GetTodo), new { id = todo.Id }, todo);
+                var response = ApiResponse<Todo>.SuccessResponse(todo, "Todo created successfully");
+                return CreatedAtAction(nameof(GetTodo), new { id = todo.Id }, response);
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(ex.Message);
+                return BadRequest(ApiResponse<Todo>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating todo");
+                return StatusCode(500, ApiResponse<Todo>.ErrorResponse("An error occurred while creating the todo"));
             }
         }
 
@@ -102,7 +134,7 @@ namespace ToDoList.Controllers
         /// <response code="204">If the todo item was successfully updated</response>
         /// <response code="404">If the todo item was not found</response>
         /// <response code="400">If the request data is invalid</response>
-        [HttpPut("{id}")]
+        [HttpPut("{id:int}")]
         [SwaggerOperation(
             Summary = "Update todo",
             Description = "Updates an existing todo item with new title and description",
@@ -112,7 +144,11 @@ namespace ToDoList.Controllers
         [SwaggerResponse(204, "Todo item successfully updated")]
         [SwaggerResponse(404, "Todo item not found")]
         [SwaggerResponse(400, "Invalid input")]
-        public async Task<IActionResult> UpdateTodo(int id, [FromBody] TodoUpdateRequest request)
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<object>>> UpdateTodo(int id, [FromBody] TodoUpdateRequest request)
         {
             try
             {
@@ -121,11 +157,16 @@ namespace ToDoList.Controllers
             }
             catch (KeyNotFoundException)
             {
-                return NotFound();
+                return NotFound(ApiResponse<object>.ErrorResponse($"Todo with ID {id} not found"));
             }
             catch (ArgumentException ex)
             {
-                return BadRequest(ex.Message);
+                return BadRequest(ApiResponse<object>.ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating todo {Id}", id);
+                return StatusCode(500, ApiResponse<object>.ErrorResponse("An error occurred while updating the todo"));
             }
         }
 
@@ -136,7 +177,7 @@ namespace ToDoList.Controllers
         /// <returns>No content if successful</returns>
         /// <response code="204">If the todo item was successfully deleted</response>
         /// <response code="404">If the todo item was not found</response>
-        [HttpDelete("{id}")]
+        [HttpDelete("{id:int}")]
         [SwaggerOperation(
             Summary = "Delete todo",
             Description = "Deletes a specific todo item by its ID",
@@ -145,6 +186,9 @@ namespace ToDoList.Controllers
         )]
         [SwaggerResponse(204, "Todo item successfully deleted")]
         [SwaggerResponse(404, "Todo item not found")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> DeleteTodo(int id)
         {
             try
@@ -154,7 +198,12 @@ namespace ToDoList.Controllers
             }
             catch (KeyNotFoundException)
             {
-                return NotFound();
+                return NotFound(ApiResponse<object>.ErrorResponse($"Todo with ID {id} not found"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting todo {Id}", id);
+                return StatusCode(500, ApiResponse<object>.ErrorResponse("An error occurred while deleting the todo"));
             }
         }
 
@@ -165,25 +214,33 @@ namespace ToDoList.Controllers
         /// <returns>The new completion status</returns>
         /// <response code="200">Returns the new completion status</response>
         /// <response code="404">If the todo item was not found</response>
-        [HttpPatch("{id}/toggle")]
+        [HttpPatch("{id:int}/toggle")]
         [SwaggerOperation(
             Summary = "Toggle todo status",
             Description = "Toggles the completion status of a specific todo item",
             OperationId = "ToggleTodoStatus",
             Tags = new[] { "Todos" }
         )]
-        [SwaggerResponse(200, "Todo status successfully toggled", typeof(object))]
+        [SwaggerResponse(200, "Todo status successfully toggled", typeof(ApiResponse<object>))]
         [SwaggerResponse(404, "Todo item not found")]
-        public async Task<IActionResult> ToggleTodoStatus(int id)
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<object>>> ToggleTodoStatus(int id)
         {
             try
             {
                 var newStatus = await _todoManager.ToggleTodoStatusAsync(id);
-                return Ok(new { isCompleted = newStatus });
+                return Ok(ApiResponse<object>.SuccessResponse(new { isCompleted = newStatus }, "Todo status toggled successfully"));
             }
             catch (KeyNotFoundException)
             {
-                return NotFound();
+                return NotFound(ApiResponse<object>.ErrorResponse($"Todo with ID {id} not found"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error toggling todo status {Id}", id);
+                return StatusCode(500, ApiResponse<object>.ErrorResponse("An error occurred while toggling the todo status"));
             }
         }
 
@@ -205,20 +262,24 @@ namespace ToDoList.Controllers
         [SwaggerResponse(200, "Todos successfully saved to file")]
         [SwaggerResponse(400, "No todos to save")]
         [SwaggerResponse(500, "Error saving todos to file")]
-        public async Task<IActionResult> SaveToFile([FromQuery] string filePath = null)
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<object>>> SaveToFile([FromQuery] string? filePath = null)
         {
             try
             {
                 await _todoManager.SaveToFileAsync(filePath);
-                return Ok("Todos saved successfully");
+                return Ok(ApiResponse<object>.SuccessResponse(null, "Todos saved successfully"));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(ex.Message);
+                return BadRequest(ApiResponse<object>.ErrorResponse(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error saving todos: {ex.Message}");
+                _logger.LogError(ex, "Error saving todos to file");
+                return StatusCode(500, ApiResponse<object>.ErrorResponse("An error occurred while saving todos to file"));
             }
         }
 
@@ -240,60 +301,25 @@ namespace ToDoList.Controllers
         [SwaggerResponse(200, "Todos successfully loaded from file")]
         [SwaggerResponse(400, "No todos found in file")]
         [SwaggerResponse(500, "Error loading todos from file")]
-        public async Task<IActionResult> LoadFromFile([FromQuery] string filePath = null)
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ApiResponse<object>>> LoadFromFile([FromQuery] string? filePath = null)
         {
             try
             {
                 await _todoManager.LoadFromFileAsync(filePath);
-                return Ok("Todos loaded successfully");
+                return Ok(ApiResponse<object>.SuccessResponse(null, "Todos loaded successfully"));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(ex.Message);
+                return BadRequest(ApiResponse<object>.ErrorResponse(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error loading todos: {ex.Message}");
+                _logger.LogError(ex, "Error loading todos from file");
+                return StatusCode(500, ApiResponse<object>.ErrorResponse("An error occurred while loading todos from file"));
             }
         }
-    }
-
-    /// <summary>
-    /// Request model for creating a new todo item
-    /// </summary>
-    public class TodoCreateRequest
-    {
-        /// <summary>
-        /// The title of the todo item
-        /// </summary>
-        /// <example>Complete project documentation</example>
-        [SwaggerSchema(Description = "The title of the todo item")]
-        public string Title { get; set; }
-
-        /// <summary>
-        /// The description of the todo item
-        /// </summary>
-        /// <example>Write comprehensive documentation for the API project</example>
-        [SwaggerSchema(Description = "The description of the todo item")]
-        public string Description { get; set; }
-    }
-    /// <summary>
-    /// Request model for updating an existing todo item
-    /// </summary>
-    public class TodoUpdateRequest
-    {
-        /// <summary>
-        /// The new title of the todo item
-        /// </summary>
-        /// <example>Updated project documentation</example>
-        [SwaggerSchema(Description = "The new title of the todo item")]
-        public string Title { get; set; }
-
-        /// <summary>
-        /// The new description of the todo item
-        /// </summary>
-        /// <example>Update the API documentation with new endpoints</example>
-        [SwaggerSchema(Description = "The new description of the todo item")]
-        public string Description { get; set; }
     }
 }
