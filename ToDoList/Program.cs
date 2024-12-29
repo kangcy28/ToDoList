@@ -1,28 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using ToDoList.Repositories.Interfaces;
 using ToDoList.Repositories;
-using Microsoft.EntityFrameworkCore.SqlServer;
 using Microsoft.OpenApi.Models;
+using ToDoList.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
-
-
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-// Register the repository
-builder.Services.AddScoped<ITodoRepository, TodoRepository>();
-
-
-// Add services to the container.
-builder.Services.AddDbContext<TodoDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-// Add services to the container.
-
-builder.Services.AddControllers();
-// 4. Swagger Configuration
+// Add services to the container
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -34,9 +18,20 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+// Register services
+builder.Services.AddScoped<ITodoRepository, TodoRepository>();
+builder.Services.AddScoped<TodoManager>();
+builder.Services.AddScoped<MenuSystem>();
+
+// Add DbContext
+builder.Services.AddDbContext<TodoDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddControllers();
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -44,9 +39,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseAuthorization();
-
 app.MapControllers();
+
+// Run menu system
+using (var scope = app.Services.CreateScope())
+{
+    var menuSystem = scope.ServiceProvider.GetRequiredService<MenuSystem>();
+    await menuSystem.RunAsync();
+}
 
 app.Run();
