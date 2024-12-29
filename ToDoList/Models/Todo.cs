@@ -1,21 +1,43 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Swashbuckle.AspNetCore.Annotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace ToDoList.Models
 {
-    // Models/Todo.cs
+    /// <summary>
+    /// Represents a todo item
+    /// </summary>
+    [SwaggerSchema(Description = "Represents a todo item in the system")]
     public class Todo
     {
+        /// <summary>
+        /// The unique identifier for the todo item
+        /// </summary>
+        [SwaggerSchema(Description = "The unique identifier for the todo item")]
         public int Id { get; set; }
 
-        [Required(ErrorMessage = "Title is required")]
-        [StringLength(100, ErrorMessage = "Title cannot be longer than 100 characters")]
+        /// <summary>
+        /// The title of the todo item
+        /// </summary>
+        [Required]
+        [SwaggerSchema(Description = "The title of the todo item")]
         public string Title { get; set; }
 
-        [StringLength(500, ErrorMessage = "Description cannot be longer than 500 characters")]
+        /// <summary>
+        /// The description of the todo item
+        /// </summary>
+        [SwaggerSchema(Description = "The description of the todo item")]
         public string Description { get; set; }
 
+        /// <summary>
+        /// Indicates whether the todo item is completed
+        /// </summary>
+        [SwaggerSchema(Description = "Indicates whether the todo item is completed")]
         public bool IsCompleted { get; set; }
 
+        /// <summary>
+        /// The date and time when the todo item was created
+        /// </summary>
+        [SwaggerSchema(Description = "The date and time when the todo item was created")]
         public DateTime CreatedDate { get; set; }
 
         public void Validate()
