@@ -22,7 +22,7 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 builder.Services.AddScoped<TodoManager>();
 builder.Services.AddScoped<MenuSystem>();
-
+builder.Services.AddScoped<FileService>();
 // Add DbContext
 builder.Services.AddDbContext<TodoDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));

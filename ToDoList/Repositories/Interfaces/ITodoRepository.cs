@@ -10,5 +10,7 @@ namespace ToDoList.Repositories.Interfaces
         Task UpdateAsync(Todo todo);
         Task DeleteAsync(int id);
         Task<bool> ToggleStatusAsync(int id);
+        Task SaveToFileAsync(string filePath = null);
+        Task LoadFromFileAsync(string filePath = null);
     }
 }

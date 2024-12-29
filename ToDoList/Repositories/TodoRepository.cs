@@ -1,18 +1,22 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ToDoList.Models;
 using ToDoList.Repositories.Interfaces;
+using ToDoList.Services;
 
 namespace ToDoList.Repositories
 {
     public class TodoRepository : ITodoRepository
     {
         private readonly TodoDbContext _context;
+        private readonly FileService _fileService;
 
-        public TodoRepository(TodoDbContext context)
+        public TodoRepository(TodoDbContext context, FileService fileService)
         {
             _context = context;
+            _fileService = fileService;
         }
 
+        // Existing CRUD methods...
         public async Task<IEnumerable<Todo>> GetAllAsync()
         {
             return await _context.Todos.ToListAsync();
@@ -62,9 +66,32 @@ namespace ToDoList.Repositories
 
             todo.IsCompleted = !todo.IsCompleted;
             await _context.SaveChangesAsync();
-
             return todo.IsCompleted;
         }
 
+        // New file operation methods
+        public async Task SaveToFileAsync(string filePath = null)
+        {
+            var todos = await _context.Todos.ToListAsync();
+            await _fileService.SaveTodosAsync(todos, filePath);
+        }
+
+        public async Task LoadFromFileAsync(string filePath = null)
+        {
+            var todos = await _fileService.LoadTodosAsync(filePath);
+
+            // Clear existing todos
+            _context.Todos.RemoveRange(await _context.Todos.ToListAsync());
+
+            // Add loaded todos
+            foreach (var todo in todos)
+            {
+                // Reset ID to let database handle it
+                todo.Id = 0;
+                _context.Todos.Add(todo);
+            }
+
+            await _context.SaveChangesAsync();
+        }
     }
 }

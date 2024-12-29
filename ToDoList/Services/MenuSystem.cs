@@ -1,4 +1,5 @@
-﻿using ToDoList.Models;
+﻿using ToDoList.Exceptions;
+using ToDoList.Models;
 
 namespace ToDoList.Services
 {
@@ -40,6 +41,12 @@ namespace ToDoList.Services
                         await ToggleTodoStatusAsync();
                         break;
                     case "7":
+                        await SaveToFileAsync();
+                        break;
+                    case "8":
+                        await LoadFromFileAsync();
+                        break;
+                    case "9":
                         exit = true;
                         break;
                     default:
@@ -59,8 +66,10 @@ namespace ToDoList.Services
             Console.WriteLine("4. Update Todo");
             Console.WriteLine("5. Delete Todo");
             Console.WriteLine("6. Toggle Todo Status");
-            Console.WriteLine("7. Exit");
-            Console.Write("Enter your choice (1-7): ");
+            Console.WriteLine("7. Save to File");
+            Console.WriteLine("8. Load from File");
+            Console.WriteLine("9. Exit");
+            Console.Write("Enter your choice (1-9): ");
         }
 
         private async Task CreateTodoAsync()
@@ -259,6 +268,96 @@ namespace ToDoList.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"\nError toggling todo status: {ex.Message}");
+            }
+
+            Console.WriteLine("\nPress any key to continue...");
+            Console.ReadKey();
+        }
+
+        private async Task SaveToFileAsync()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Save Todos to File ===\n");
+
+            try
+            {
+                Console.Write("Enter file path (or press Enter for default 'Data/todos.json'): ");
+                string filePath = Console.ReadLine();
+
+                // Show where the file will be saved
+                string finalPath = string.IsNullOrWhiteSpace(filePath)
+                    ? Path.Combine(Directory.GetCurrentDirectory(), "Data", "todos.json")
+                    : filePath;
+                Console.WriteLine($"\nSaving to: {finalPath}");
+
+                // Ask for confirmation if file exists
+                if (File.Exists(finalPath))
+                {
+                    Console.Write("\nFile already exists. Do you want to overwrite it? (y/n): ");
+                    if (Console.ReadLine()?.ToLower() != "y")
+                    {
+                        Console.WriteLine("\nSave operation cancelled.");
+                        Console.WriteLine("\nPress any key to continue...");
+                        Console.ReadKey();
+                        return;
+                    }
+                }
+
+                await _todoManager.SaveToFileAsync(finalPath);
+                Console.WriteLine("\nTodos saved successfully!");
+            }
+            catch (FileOperationException ex)
+            {
+                Console.WriteLine($"\nError saving todos: {ex.Message}");
+                if (ex.InnerException != null)
+                    Console.WriteLine($"Details: {ex.InnerException.Message}");
+            }
+
+            Console.WriteLine("\nPress any key to continue...");
+            Console.ReadKey();
+        }
+
+        private async Task LoadFromFileAsync()
+        {
+            Console.Clear();
+            Console.WriteLine("=== Load Todos from File ===\n");
+
+            try
+            {
+                Console.Write("Enter file path (or press Enter for default 'Data/todos.json'): ");
+                string filePath = Console.ReadLine();
+
+                string finalPath = string.IsNullOrWhiteSpace(filePath)
+                    ? Path.Combine(Directory.GetCurrentDirectory(), "Data", "todos.json")
+                    : filePath;
+
+                if (!File.Exists(finalPath))
+                {
+                    Console.WriteLine($"\nFile not found: {finalPath}");
+                    Console.WriteLine("\nPress any key to continue...");
+                    Console.ReadKey();
+                    return;
+                }
+
+                // Show confirmation before loading
+                Console.WriteLine($"\nLoading from: {finalPath}");
+                Console.Write("This will replace all current todos. Continue? (y/n): ");
+                if (Console.ReadLine()?.ToLower() != "y")
+                {
+                    Console.WriteLine("\nLoad operation cancelled.");
+                    Console.WriteLine("\nPress any key to continue...");
+                    Console.ReadKey();
+                    return;
+                }
+
+                await _todoManager.LoadFromFileAsync(finalPath);
+                Console.WriteLine("\nTodos loaded successfully!");
+            }
+            catch (FileOperationException ex)
+            {
+                Console.WriteLine($"\nError loading todos: {ex.Message}");
+                if (ex.InnerException != null)
+                    Console.WriteLine($"Details: {ex.InnerException.Message}");
             }
 
             Console.WriteLine("\nPress any key to continue...");
