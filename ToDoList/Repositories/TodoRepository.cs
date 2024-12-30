@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using ToDoList.Models;
 using ToDoList.Repositories.Interfaces;
 using ToDoList.Services;
@@ -9,17 +10,22 @@ namespace ToDoList.Repositories
     {
         private readonly TodoDbContext _context;
         private readonly FileService _fileService;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public TodoRepository(TodoDbContext context, FileService fileService)
+        public TodoRepository(TodoDbContext context, FileService fileService, IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _fileService = fileService;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         // Existing CRUD methods...
         public async Task<IEnumerable<Todo>> GetAllAsync()
         {
-            return await _context.Todos.ToListAsync();
+            var userId = _httpContextAccessor.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return await _context.Todos
+                .Where(t => t.UserId == userId)
+                .ToListAsync();
         }
 
         public async Task<Todo> GetByIdAsync(int id)
@@ -29,7 +35,7 @@ namespace ToDoList.Repositories
 
         public async Task<Todo> CreateAsync(Todo todo)
         {
-            todo.CreatedDate = DateTime.UtcNow;
+            todo.UserId = _httpContextAccessor.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             _context.Todos.Add(todo);
             await _context.SaveChangesAsync();
             return todo;

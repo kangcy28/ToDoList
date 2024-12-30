@@ -1,17 +1,30 @@
 using Microsoft.EntityFrameworkCore;
-using ToDoList.Repositories.Interfaces;
-using ToDoList.Repositories;
 using Microsoft.OpenApi.Models;
-using ToDoList.Services;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using System.Reflection;
+using System.Text;
+using ToDoList.Models;
+using ToDoList.Repositories;
+using ToDoList.Repositories.Interfaces;
+using ToDoList.Services;
+using ToDoList.Services.Interfaces;
 using ToDoList;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add Identity
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
+    .AddEntityFrameworkStores<TodoDbContext>()
+    .AddDefaultTokenProviders();
 
 // Add services to the container
 builder.Services.AddControllers();
 builder.Services.AddApplication();
 builder.Services.AddEndpointsApiExplorer();
+
+// Configure Swagger
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
@@ -34,15 +47,34 @@ builder.Services.AddSwaggerGen(options =>
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
 });
 
+// Configure JWT Authentication
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["JWT:Issuer"],
+        ValidAudience = builder.Configuration["JWT:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(builder.Configuration["JWT:Secret"]))
+    };
+});
+
 // Register services
+builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 builder.Services.AddScoped<TodoManager>();
 builder.Services.AddScoped<FileService>();
 
-// Remove MenuSystem registration since it's not needed for API
-// builder.Services.AddScoped<MenuSystem>();
-
-// Add DbContext
+// Configure DbContext
 builder.Services.AddDbContext<TodoDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -59,14 +91,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Add authentication middleware before authorization
+app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
-
-// Remove the menu system execution since this is now a Web API
-// using (var scope = app.Services.CreateScope())
-// {
-//     var menuSystem = scope.ServiceProvider.GetRequiredService<MenuSystem>();
-//     await menuSystem.RunAsync();
-// }
-
 app.Run();

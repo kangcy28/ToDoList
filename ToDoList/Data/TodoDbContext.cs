@@ -1,9 +1,12 @@
 ﻿// Data/TodoDbContext.cs
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 using System.Collections.Generic;
 using System.Reflection.Emit;
 using ToDoList.Models;
-public class TodoDbContext : DbContext
+
+public class TodoDbContext : IdentityDbContext<ApplicationUser>
 {
     public TodoDbContext(DbContextOptions<TodoDbContext> options)
         : base(options)
@@ -11,15 +14,21 @@ public class TodoDbContext : DbContext
     }
     public DbSet<Todo> Todos { get; set; }
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    protected override void OnModelCreating(ModelBuilder builder)
     {
-        modelBuilder.Entity<Todo>()
+        base.OnModelCreating(builder);
+        builder.Entity<Todo>()
             .Property(t => t.Title)
             .IsRequired()
             .HasMaxLength(100);
 
-        modelBuilder.Entity<Todo>()
+        builder.Entity<Todo>()
             .Property(t => t.Description)
             .HasMaxLength(500);
+        // Add relationship configuration
+        builder.Entity<Todo>()
+            .HasOne(t => t.User)
+            .WithMany(u => u.Todos)
+            .HasForeignKey(t => t.UserId);
     }
 }
