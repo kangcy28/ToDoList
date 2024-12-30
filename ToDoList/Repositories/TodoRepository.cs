@@ -70,13 +70,13 @@ namespace ToDoList.Repositories
         }
 
         // New file operation methods
-        public async Task SaveToFileAsync(string filePath = null)
+        public async Task SaveToFileAsync(string filePath)
         {
             var todos = await _context.Todos.ToListAsync();
             await _fileService.SaveTodosAsync(todos, filePath);
         }
 
-        public async Task LoadFromFileAsync(string filePath = null)
+        public async Task LoadFromFileAsync(string filePath)
         {
             var todos = await _fileService.LoadTodosAsync(filePath);
 

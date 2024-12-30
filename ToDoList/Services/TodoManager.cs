@@ -75,7 +75,7 @@ namespace ToDoList.Services
             return await _todoRepository.ToggleStatusAsync(id);
         }
 
-        public async Task SaveToFileAsync(string filePath = null)
+        public async Task SaveToFileAsync(string filePath)
         {
             var todos = await _todoRepository.GetAllAsync();
             if (!todos.Any())
@@ -84,7 +84,7 @@ namespace ToDoList.Services
             await _fileService.SaveTodosAsync(todos, filePath);
         }
 
-        public async Task LoadFromFileAsync(string filePath = null)
+        public async Task LoadFromFileAsync(string filePath)
         {
             
             var todos = await _fileService.LoadTodosAsync(filePath);

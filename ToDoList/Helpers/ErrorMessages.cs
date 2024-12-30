@@ -2,7 +2,7 @@
 {
     public static class ErrorMessages
     {
-        public static void DisplayError(string message, Exception ex = null)
+        public static void DisplayError(string message, Exception ex)
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"\nError: {message}");

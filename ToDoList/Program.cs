@@ -4,11 +4,13 @@ using ToDoList.Repositories;
 using Microsoft.OpenApi.Models;
 using ToDoList.Services;
 using System.Reflection;
+using ToDoList;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
 builder.Services.AddControllers();
+builder.Services.AddApplication();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {

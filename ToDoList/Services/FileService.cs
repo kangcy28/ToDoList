@@ -23,7 +23,7 @@ public class FileService
         };
     }
 
-    public async Task SaveTodosAsync(IEnumerable<Todo> todos, string filePath = null)
+    public async Task SaveTodosAsync(IEnumerable<Todo> todos, string filePath)
     {
         filePath ??= _defaultFilePath;
 
