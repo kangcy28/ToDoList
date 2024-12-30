@@ -154,7 +154,9 @@ namespace ToDoList.Controllers
         {
             try
             {
+#pragma warning disable CS8604 // Possible null reference argument.
                 await _todoManager.UpdateTodoAsync(id, request.Title, request.Description);
+#pragma warning restore CS8604 // Possible null reference argument.
                 return NoContent();
             }
             catch (KeyNotFoundException)

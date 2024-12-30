@@ -45,14 +45,14 @@ namespace ToDoList.Models
         /// </summary>
         [Required(ErrorMessage = "User ID is required")]
         [SwaggerSchema(Description = "The unique identifier of the user who owns this todo item")]
-        public string UserId { get; set; }
+        public string? UserId { get; set; }
 
         /// <summary>
         /// Navigation property for the user who owns this todo item
         /// </summary>
         [SwaggerSchema(Description = "The associated user object")]
         [ForeignKey("UserId")]  // Explicit foreign key relationship
-        public virtual ApplicationUser User { get; set; }
+        public virtual ApplicationUser? User { get; set; }
         public void Validate()
         {
             if (string.IsNullOrWhiteSpace(Title))

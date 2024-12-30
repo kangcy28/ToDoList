@@ -29,6 +29,7 @@ public class TodoDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Todo>()
             .HasOne(t => t.User)
             .WithMany(u => u.Todos)
-            .HasForeignKey(t => t.UserId);
+            .HasForeignKey(t => t.UserId)
+            .IsRequired(false);  // Make the relationship optional
     }
 }
