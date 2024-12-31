@@ -155,4 +155,3 @@ jobs:
           echo "Nginx Status:"
           sudo systemctl status nginx --no-pager
         '
-        '
