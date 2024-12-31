@@ -2,10 +2,18 @@ name: Deploy to Azure VM
 
 on:
   push:
-    branches: [ "main" ]  # or your default branch
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
+env:
+  AZURE_VM_IP: your-vm-ip-address
+  AZURE_VM_USERNAME: your-vm-username
+  PROJECT_NAME: ToDoList
+  DOTNET_VERSION: '7.0'
+  
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
@@ -14,26 +22,78 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: '8.0.100'  # adjust version as needed
-        
+        dotnet-version: '8.0.100'
+    
     - name: Restore dependencies
       run: dotnet restore
-      
+    
     - name: Build
       run: dotnet build --no-restore --configuration Release
-      
+    
+    - name: Test
+      run: dotnet test --no-build --verbosity normal
+    
     - name: Publish
-      run: dotnet publish --no-build --configuration Release -o ./publish
-        
-    - name: Install SSH Key
-      uses: shimataro/ssh-key-action@v2
-      with:
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
-        
-    - name: Adding Known Hosts
-      run: ssh-keyscan -H ${{ secrets.AZURE_VM_IP }} >> ~/.ssh/known_hosts
-        
+      run: dotnet publish --configuration Release --output ./publish
+    
+    - name: Create deployment package
+      run: |
+        cd publish
+        zip -r ../${{ env.PROJECT_NAME }}.zip .
+        cd ..
+    
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ env.AZURE_VM_IP }} >> ~/.ssh/known_hosts
+    
     - name: Deploy to Azure VM
       run: |
-        rsync -avz --delete ./publish/ ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }}:/var/www/myapp/
+        # Stop the existing service if running
+        ssh ${{ env.AZURE_VM_USERNAME }}@${{ env.AZURE_VM_IP }} 'sudo systemctl stop ${{ env.PROJECT_NAME }}.service || true'
+        
+        # Copy the deployment package
+        scp ${{ env.PROJECT_NAME }}.zip ${{ env.AZURE_VM_USERNAME }}@${{ env.AZURE_VM_IP }}:/tmp/
+        
+        # Deploy the application
+        ssh ${{ env.AZURE_VM_USERNAME }}@${{ env.AZURE_VM_IP }} '
+          # Remove existing deployment
+          sudo rm -rf /var/www/${{ env.PROJECT_NAME }}
+          
+          # Create deployment directory
+          sudo mkdir -p /var/www/${{ env.PROJECT_NAME }}
+          
+          # Extract new deployment
+          sudo unzip /tmp/${{ env.PROJECT_NAME }}.zip -d /var/www/${{ env.PROJECT_NAME }}
+          
+          # Update permissions
+          sudo chown -R www-data:www-data /var/www/${{ env.PROJECT_NAME }}
+          
+          # Create or update systemd service
+          sudo tee /etc/systemd/system/${{ env.PROJECT_NAME }}.service << EOF
+          [Unit]
+          Description=${{ env.PROJECT_NAME }} .NET Core Web API
+          
+          [Service]
+          WorkingDirectory=/var/www/${{ env.PROJECT_NAME }}
+          ExecStart=/usr/bin/dotnet /var/www/${{ env.PROJECT_NAME }}/${{ env.PROJECT_NAME }}.dll
+          Restart=always
+          RestartSec=10
+          User=www-data
+          Environment=ASPNETCORE_ENVIRONMENT=Production
+          Environment=ASPNETCORE_URLS=http://localhost:5058
+          
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          
+          # Reload systemd and restart service
+          sudo systemctl daemon-reload
+          sudo systemctl enable ${{ env.PROJECT_NAME }}.service
+          sudo systemctl start ${{ env.PROJECT_NAME }}.service
+          
+          # Clean up
+          rm /tmp/${{ env.PROJECT_NAME }}.zip
+        '
