@@ -33,6 +33,14 @@ jobs:
         
     - name: Adding Known Hosts
       run: ssh-keyscan -H ${{ secrets.AZURE_VM_IP }} >> ~/.ssh/known_hosts
+
+    - name: Setup Directory on VM
+      run: |
+        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} '
+          sudo mkdir -p /var/www/${{ secrets.PROJECT_NAME }}
+          sudo chown -R ${{ secrets.AZURE_VM_USERNAME }}:${{ secrets.AZURE_VM_USERNAME }} /var/www
+          sudo chmod -R 755 /var/www
+        '
         
     - name: Deploy to Azure VM
       run: |
@@ -41,6 +49,10 @@ jobs:
     - name: Setup and Restart Services on VM
       run: |
         ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} '
+          # Stop existing services
+          sudo systemctl stop ${{ secrets.PROJECT_NAME }}.service || true
+          sudo systemctl stop nginx || true
+
           # Update package list
           sudo apt-get update
 
@@ -112,18 +124,25 @@ jobs:
           }
           EOF
 
-          # Enable the site
-          sudo ln -sf /etc/nginx/sites-available/${{ secrets.PROJECT_NAME }} /etc/nginx/sites-enabled/
-
-          # Remove default if exists
+          # Enable the site and remove default
           sudo rm -f /etc/nginx/sites-enabled/default
+          sudo ln -sf /etc/nginx/sites-available/${{ secrets.PROJECT_NAME }} /etc/nginx/sites-enabled/
 
           # Test Nginx configuration
           sudo nginx -t
 
+          # Clean up old processes (if any)
+          sudo pkill -f dotnet || true
+
           # Reload systemd and restart services
           sudo systemctl daemon-reload
           sudo systemctl enable ${{ secrets.PROJECT_NAME }}.service
-          sudo systemctl restart ${{ secrets.PROJECT_NAME }}.service
-          sudo systemctl restart nginx
+          sudo systemctl start ${{ secrets.PROJECT_NAME }}.service
+          sudo systemctl start nginx
+
+          # Verify services are running
+          echo "Service Status:"
+          sudo systemctl status ${{ secrets.PROJECT_NAME }}.service --no-pager
+          echo "Nginx Status:"
+          sudo systemctl status nginx --no-pager
         '
