@@ -3,6 +3,11 @@ name: Deploy to Azure VM
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  DOTNET_VERSION: '8.0.100'
+  AZURE_VM_DIR: '/var/www'
 
 jobs:
   deploy:
@@ -10,17 +15,30 @@ jobs:
     
     steps:
     - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Fetch all history for git info
     
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: '8.0.100'
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Cache NuGet packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
         
     - name: Restore dependencies
       run: dotnet restore
       
     - name: Build
       run: dotnet build --no-restore --configuration Release
+      
+    - name: Run Tests
+      run: dotnet test --no-build --verbosity normal --configuration Release
       
     - name: Publish
       run: dotnet publish --no-build --configuration Release -o ./publish
@@ -30,55 +48,99 @@ jobs:
       with:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
+        config: |
+          Host deployment-target
+            HostName ${{ secrets.AZURE_VM_IP }}
+            User ${{ secrets.AZURE_VM_USERNAME }}
+            StrictHostKeyChecking no
         
     - name: Adding Known Hosts
       run: ssh-keyscan -H ${{ secrets.AZURE_VM_IP }} >> ~/.ssh/known_hosts
 
+    - name: Check VM Connectivity
+      run: |
+        if ! ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} 'exit'; then
+          echo "Failed to connect to VM"
+          exit 1
+        fi
+
+    - name: Check System Resources
+      run: |
+        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} '
+          echo "Disk Space Usage:"
+          df -h
+          echo "Memory Usage:"
+          free -h
+          echo "CPU Load:"
+          uptime
+        '
+
+    - name: Backup Existing Deployment
+      run: |
+        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} '
+          if [ -d "${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }}" ]; then
+            timestamp=$(date +%Y%m%d_%H%M%S)
+            sudo cp -r ${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }} ${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }}_backup_$timestamp
+          fi
+        '
+
     - name: Setup Directory on VM
       run: |
         ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} '
-          sudo mkdir -p /var/www/${{ secrets.PROJECT_NAME }}
-          sudo chown -R ${{ secrets.AZURE_VM_USERNAME }}:${{ secrets.AZURE_VM_USERNAME }} /var/www
-          sudo chmod -R 755 /var/www
+          sudo mkdir -p ${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }}
+          sudo chown -R ${{ secrets.AZURE_VM_USERNAME }}:${{ secrets.AZURE_VM_USERNAME }} ${{ env.AZURE_VM_DIR }}
+          sudo chmod -R 755 ${{ env.AZURE_VM_DIR }}
         '
         
     - name: Deploy to Azure VM
       run: |
-        rsync -avz --delete ./publish/ ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }}:/var/www/${{ secrets.PROJECT_NAME }}/
+        rsync -avz --delete --exclude='*.log' --exclude='appsettings.*.json' ./publish/ ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }}:${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }}/
     
     - name: Setup and Restart Services on VM
       run: |
         ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} '
+          # Create deployment log
+          exec 1> >(tee -a /tmp/deployment.log) 2>&1
+          echo "Starting deployment at $(date)"
+
           # Stop existing services
+          echo "Stopping existing services..."
           sudo systemctl stop ${{ secrets.PROJECT_NAME }}.service || true
           sudo systemctl stop nginx || true
 
           # Update package list
+          echo "Updating packages..."
           sudo apt-get update
+          sudo apt-get upgrade -y
 
-          # Install .NET SDK and Runtime
+          # Install/Update Required Packages
+          echo "Installing dependencies..."
           wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
           sudo dpkg -i packages-microsoft-prod.deb
           sudo apt-get update
           sudo apt-get install -y dotnet-sdk-8.0
           sudo apt-get install -y aspnetcore-runtime-8.0
-
-          # Install Nginx
           sudo apt-get install -y nginx
 
-          # Set correct permissions
-          sudo chown -R ${{ secrets.AZURE_VM_USERNAME }}:${{ secrets.AZURE_VM_USERNAME }} /var/www/${{ secrets.PROJECT_NAME }}
-          sudo chmod -R 755 /var/www/${{ secrets.PROJECT_NAME }}
+          # Clean up old processes
+          echo "Cleaning up old processes..."
+          sudo pkill -f dotnet || true
 
-          # Create/Update systemd service
+          # Set correct permissions
+          echo "Setting permissions..."
+          sudo chown -R ${{ secrets.AZURE_VM_USERNAME }}:${{ secrets.AZURE_VM_USERNAME }} ${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }}
+          sudo chmod -R 755 ${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }}
+
+          # Create/Update systemd service with enhanced logging
+          echo "Configuring systemd service..."
           sudo tee /etc/systemd/system/${{ secrets.PROJECT_NAME }}.service << EOF
           [Unit]
           Description=.NET Web App
           After=network.target
-
+          
           [Service]
-          WorkingDirectory=/var/www/${{ secrets.PROJECT_NAME }}
-          ExecStart=/usr/bin/dotnet /var/www/${{ secrets.PROJECT_NAME }}/${{ secrets.PROJECT_NAME }}.dll
+          WorkingDirectory=${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }}
+          ExecStart=/usr/bin/dotnet ${{ env.AZURE_VM_DIR }}/${{ secrets.PROJECT_NAME }}/${{ secrets.PROJECT_NAME }}.dll
           Restart=always
           RestartSec=10
           KillSignal=SIGINT
@@ -87,17 +149,33 @@ jobs:
           Environment=ASPNETCORE_URLS=http://0.0.0.0:${{ secrets.APP_PORT }}
           Environment=DOTNET_GCHeapHardLimit=800000000
           Environment=COMPlus_GCHeapHardLimit=800000000
-
+          StandardOutput=append:/var/log/${{ secrets.PROJECT_NAME }}/app.log
+          StandardError=append:/var/log/${{ secrets.PROJECT_NAME }}/error.log
+          
           [Install]
           WantedBy=multi-user.target
           EOF
 
-          # Create/Update Nginx configuration
+          # Create log directory
+          sudo mkdir -p /var/log/${{ secrets.PROJECT_NAME }}
+          sudo chown -R ${{ secrets.AZURE_VM_USERNAME }}:${{ secrets.AZURE_VM_USERNAME }} /var/log/${{ secrets.PROJECT_NAME }}
+
+          # Create/Update Nginx configuration with enhanced security
+          echo "Configuring Nginx..."
           sudo tee /etc/nginx/sites-available/${{ secrets.PROJECT_NAME }} << EOF
           server {
               listen 80;
               server_name ${{ secrets.AZURE_VM_IP }};
 
+              # Security headers
+              add_header X-Frame-Options "SAMEORIGIN";
+              add_header X-XSS-Protection "1; mode=block";
+              add_header X-Content-Type-Options "nosniff";
+              add_header Referrer-Policy "no-referrer-when-downgrade";
+              
+              # SSL configuration can be added here
+              
+              # Global proxy settings
               proxy_http_version 1.1;
               proxy_set_header Host \$host;
               proxy_set_header Upgrade \$http_upgrade;
@@ -107,11 +185,19 @@ jobs:
               proxy_set_header X-Forwarded-Proto \$scheme;
               proxy_cache_bypass \$http_upgrade;
 
-              proxy_read_timeout 90;
-              proxy_connect_timeout 90;
+              # Timeouts
+              proxy_read_timeout 90s;
+              proxy_connect_timeout 90s;
+              proxy_send_timeout 90s;
 
+              # Compression
+              gzip on;
+              gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+              # API endpoints
               location /swagger {
                   proxy_pass http://localhost:${{ secrets.APP_PORT }}/swagger;
+                  # Basic auth can be added here for production
               }
 
               location /swagger/v1/swagger.json {
@@ -121,28 +207,55 @@ jobs:
               location / {
                   proxy_pass http://localhost:${{ secrets.APP_PORT }};
               }
+
+              # Error pages
+              error_page 404 /404.html;
+              error_page 500 502 503 504 /50x.html;
           }
           EOF
 
           # Enable the site and remove default
+          echo "Enabling Nginx site..."
           sudo rm -f /etc/nginx/sites-enabled/default
           sudo ln -sf /etc/nginx/sites-available/${{ secrets.PROJECT_NAME }} /etc/nginx/sites-enabled/
 
           # Test Nginx configuration
+          echo "Testing Nginx configuration..."
           sudo nginx -t
 
-          # Clean up old processes (if any)
-          sudo pkill -f dotnet || true
-
-          # Reload systemd and restart services
+          # Start services
+          echo "Starting services..."
           sudo systemctl daemon-reload
           sudo systemctl enable ${{ secrets.PROJECT_NAME }}.service
           sudo systemctl start ${{ secrets.PROJECT_NAME }}.service
-          sudo systemctl start nginx
+          sudo systemctl restart nginx
 
-          # Verify services are running
-          echo "Service Status:"
+          # Final verification
+          echo "Verifying services..."
+          sudo systemctl restart nginx
+          sudo systemctl start ${{ secrets.PROJECT_NAME }}.service
+
+          # Service status
+          echo "Checking service status..."
           sudo systemctl status ${{ secrets.PROJECT_NAME }}.service --no-pager
-          echo "Nginx Status:"
           sudo systemctl status nginx --no-pager
+
+          # Log deployment completion
+          echo "Deployment completed at $(date)"
+        '
+
+    - name: Verify Deployment
+      run: |
+        echo "Checking application health..."
+        curl -v http://${{ secrets.AZURE_VM_IP }}/health || true
+        echo "Checking Swagger UI..."
+        curl -v http://${{ secrets.AZURE_VM_IP }}/swagger || true
+
+    - name: Cleanup Old Backups
+      if: success()
+      run: |
+        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} '
+          # Keep only last 5 backups
+          cd ${{ env.AZURE_VM_DIR }}
+          ls -dt ${{ secrets.PROJECT_NAME }}_backup_* | tail -n +6 | xargs -r sudo rm -rf
         '
