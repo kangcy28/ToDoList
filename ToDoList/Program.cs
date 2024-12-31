@@ -106,14 +106,14 @@ builder.Services.AddDbContext<TodoDbContext>(options =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
-{
+//if (app.Environment.IsDevelopment())
+//{
     app.UseSwagger();
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "TodoList API V1");
     });
-}
+//}
 
 app.UseHttpsRedirection();
 
