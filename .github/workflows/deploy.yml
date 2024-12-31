@@ -2,7 +2,7 @@ name: Deploy to Azure VM
 
 on:
   push:
-    branches: [ "main" ]  # or your default branch
+    branches: [ "main" ]
 
 jobs:
   deploy:
@@ -14,7 +14,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: '8.0.100'  # adjust version as needed
+        dotnet-version: '8.0.100'
         
     - name: Restore dependencies
       run: dotnet restore
@@ -37,3 +37,90 @@ jobs:
     - name: Deploy to Azure VM
       run: |
         rsync -avz --delete ./publish/ ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }}:/var/www/myapp/
+    
+    - name: Setup and Restart Services on VM
+      run: |
+        ssh ${{ secrets.AZURE_VM_USERNAME }}@${{ secrets.AZURE_VM_IP }} '
+          # Update package list
+          sudo apt-get update
+
+          # Install .NET SDK and Runtime (if not already installed)
+          wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update
+          sudo apt-get install -y dotnet-sdk-8.0
+          sudo apt-get install -y aspnetcore-runtime-8.0
+
+          # Install Nginx if not present
+          sudo apt-get install -y nginx
+
+          # Set correct permissions
+          sudo chown -R ${{ secrets.AZURE_VM_USERNAME }}:${{ secrets.AZURE_VM_USERNAME }} /var/www/myapp
+          sudo chmod -R 755 /var/www/myapp
+
+          # Create/Update systemd service
+          sudo tee /etc/systemd/system/myapp.service << EOF
+          [Unit]
+          Description=.NET Web App
+          After=network.target
+
+          [Service]
+          WorkingDirectory=/var/www/myapp
+          ExecStart=/usr/bin/dotnet /var/www/myapp/ToDoList.dll
+          Restart=always
+          RestartSec=10
+          KillSignal=SIGINT
+          User=${{ secrets.AZURE_VM_USERNAME }}
+          Environment=ASPNETCORE_ENVIRONMENT=Production
+          Environment=ASPNETCORE_URLS=http://0.0.0.0:5058
+          Environment=DOTNET_GCHeapHardLimit=800000000
+          Environment=COMPlus_GCHeapHardLimit=800000000
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          # Create/Update Nginx configuration
+          sudo tee /etc/nginx/sites-available/default << EOF
+          server {
+              listen 80;
+              server_name ${{ secrets.AZURE_VM_IP }};
+
+              proxy_http_version 1.1;
+              proxy_set_header Host \$host;
+              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Connection keep-alive;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+              proxy_cache_bypass \$http_upgrade;
+
+              proxy_read_timeout 90;
+              proxy_connect_timeout 90;
+
+              location /swagger {
+                  proxy_pass http://localhost:5058/swagger;
+              }
+
+              location /swagger/v1/swagger.json {
+                  proxy_pass http://localhost:5058/swagger/v1/swagger.json;
+              }
+
+              location / {
+                  proxy_pass http://localhost:5058;
+              }
+          }
+          EOF
+
+          # Enable the site if not already enabled
+          sudo ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
+
+          # Test Nginx configuration
+          sudo nginx -t
+
+          # Reload systemd and restart services
+          sudo systemctl daemon-reload
+          sudo systemctl enable myapp.service
+          sudo systemctl restart myapp.service
+          sudo systemctl restart nginx
+        '
