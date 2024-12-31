@@ -145,13 +145,4 @@ jobs:
           sudo systemctl status ${{ secrets.PROJECT_NAME }}.service --no-pager
           echo "Nginx Status:"
           sudo systemctl status nginx --no-pager
-          # Final service verification
-          sudo systemctl restart nginx
-          sudo systemctl start ${{ secrets.PROJECT_NAME }}.service
-
-          # Check final status
-          echo "Service Status:"
-          sudo systemctl status ${{ secrets.PROJECT_NAME }}.service --no-pager
-          echo "Nginx Status:"
-          sudo systemctl status nginx --no-pager
         '
