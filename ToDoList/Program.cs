@@ -99,6 +99,8 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITodoRepository, TodoRepository>();
 builder.Services.AddScoped<TodoManager>();
 builder.Services.AddScoped<FileService>();
+builder.Services.AddAutoMapper(typeof(Program).Assembly);
+builder.Services.AddScoped<ICacheService, CacheService>();
 
 // Configure DbContext
 builder.Services.AddDbContext<TodoDbContext>(options =>

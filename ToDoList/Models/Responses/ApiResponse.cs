@@ -1,7 +1,11 @@
 ﻿using System.Collections.Generic;
 
+using System.Collections.Generic;
+using Swashbuckle.AspNetCore.Annotations;
+
 namespace ToDoList.Models.Responses
 {
+    [SwaggerSchema(Description = "Generic API response wrapper for Todo operations")]
     public class ApiResponse<T>
     {
         public bool Success { get; set; }

@@ -25,20 +25,21 @@ namespace ToDoList.Services
             _mapper = mapper;
         }
 
-        public async Task<Todo> AddTodoAsync(string title, string description)
+        public async Task<TodoDto> AddTodoAsync(CreateTodoDto createTodoDto)
         {
-            if (string.IsNullOrWhiteSpace(title))
-                throw new ArgumentException("Title cannot be empty.", nameof(title));
+            if (string.IsNullOrWhiteSpace(createTodoDto.Title))
+                throw new ArgumentException("Title cannot be empty.", nameof(createTodoDto.Title));
 
             var todo = new Todo
             {
-                Title = title,
-                Description = description ?? "",
+                Title = createTodoDto.Title,
+                Description = createTodoDto.Description ?? "",
                 IsCompleted = false,
                 CreatedDate = DateTime.UtcNow
             };
 
-            return await _todoRepository.CreateAsync(todo);
+            var createdTodo = await _todoRepository.CreateAsync(todo);
+            return _mapper.Map<TodoDto>(createdTodo);
         }
 
         public async Task<IEnumerable<TodoDto>> GetAllTodosAsync()

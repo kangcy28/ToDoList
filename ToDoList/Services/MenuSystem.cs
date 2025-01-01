@@ -1,4 +1,5 @@
-﻿using ToDoList.Exceptions;
+﻿using ToDoList.DTOs;
+using ToDoList.Exceptions;
 using ToDoList.Models;
 
 namespace ToDoList.Services
@@ -85,7 +86,12 @@ namespace ToDoList.Services
                 Console.Write("Enter description: ");
                 string description = Console.ReadLine();
 
-                var todo = await _todoManager.AddTodoAsync(title, description);
+                CreateTodoDto createTodoDto = new CreateTodoDto
+                {
+                    Title = title,
+                    Description = description
+                };
+                var todo = await _todoManager.AddTodoAsync(createTodoDto);
                 Console.WriteLine($"\nTodo created successfully! ID: {todo.Id}");
             }
             catch (ValidationException ex)
@@ -169,7 +175,7 @@ namespace ToDoList.Services
             Console.ReadKey();
         }
 
-        private void DisplayTodo(Todo todo)
+        private void DisplayTodo(TodoDto todo)
         {
             Console.WriteLine($"ID: {todo.Id}");
             Console.WriteLine($"Title: {todo.Title}");
@@ -211,11 +217,23 @@ namespace ToDoList.Services
                 Console.WriteLine($"Current Description: {todo.Description}");
                 Console.Write("Enter new description (or press Enter to keep current): ");
                 string description = Console.ReadLine();
+
                 if (string.IsNullOrWhiteSpace(description))
                     description = todo.Description;
 
-                await _todoManager.UpdateTodoAsync(id, title, description);
+                // Create UpdateTodoDto with only the changed values
+                var updateTodoDto = new UpdateTodoDto
+                {
+                    Title = !string.IsNullOrWhiteSpace(title) ? title : null,
+                    Description = !string.IsNullOrWhiteSpace(description) ? description : null
+                };
+
+                // Perform the update using the DTO
+                var updatedTodo = await _todoManager.UpdateTodoAsync(id, updateTodoDto);
+
                 Console.WriteLine("\nTodo updated successfully!");
+                Console.WriteLine($"Updated Title: {updatedTodo.Title}");
+                Console.WriteLine($"Updated Description: {updatedTodo.Description}");
             }
             catch (Exception ex)
             {
